@@ -28,7 +28,9 @@ initiate `bw` logic for `fastlane` binary.
 
 ## Installation
 
-TODO CI using Github Actions
+https://github.com/CedricGatay/bw/actions[Github actions] build the binary for linux / macOS. Needs to adjust a few moving pieces for Windows.
+
+You can get latest version https://github.com/CedricGatay/bw/releases/latest[here]
 
 ## Technical stack
 
