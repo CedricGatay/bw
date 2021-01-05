@@ -11,7 +11,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ ubuntu-latest, windows-latest, macos-11.0 ]
+        os: [ ubuntu-latest, windows-latest, macos-latest ]
     name: Test Suite
     steps:
       - uses: actions/checkout@v2
@@ -60,7 +60,7 @@ jobs:
           args: -- -D warnings
 
   release:
-    needs: [check, fmt, clippy]
+    needs: [test, fmt, clippy]
     name: Create GitHub Release
     runs-on: ubuntu-latest
     steps:
@@ -95,7 +95,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ ubuntu-latest, windows-latest, macos-11.0 ]
+#        os: [ ubuntu-latest, windows-latest, macos-latest ] need to fix windows build (cat / echo usage)
+        os: [ ubuntu-latest, macos-latest ]
     name: Release
     steps:
       - uses: actions/download-artifact@v1
@@ -118,14 +119,16 @@ jobs:
         with:
           command: build
           args: --release
+      - name: Archive build result
+        run: tar czf bw-${{ matrix.os }}.tar.gz README.adoc -C target/release bw
       - name: Upload Built bw
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.upload_info.outputs.upload_url }}
-          asset_path: bw-${{ matrix.name }}-${{ matrix.os }}.tar.gz
-          asset_name: bw-${{ matrix.name }}-${{ matrix.os }}.tar.gz
+          asset_path: bw-${{ matrix.os }}.tar.gz
+          asset_name: bw-${{ matrix.os }}.tar.gz
           asset_content_type: application/gzip
 
   metadata:
