@@ -1,10 +1,10 @@
+use crate::BWErrors::{FsNotFound, FsRoot};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
-use std::{fmt, fs, env};
 use std::path::PathBuf;
-use crate::BWErrors::{FsRoot, FsNotFound};
 use std::process::{Command, ExitStatus};
-use std::iter::FromIterator;
+use std::{env, fmt, fs};
+
 // expected binary name, to work with aliasing
 static NOMINAL_BINARY_NAME: &str = "bw";
 // grace period to try fallbacking to regular system wide binary launching
@@ -12,7 +12,8 @@ static RETRY_GRACE_PERIOD_SEC: u64 = 2;
 
 fn main() {
     let logger = Logger::new();
-    let extracted  = extract_command_and_args(&logger, env::current_exe().ok(), Vec::from_iter(env::args()));
+    let extracted =
+        extract_command_and_args(&logger, env::current_exe().ok(), env::args().collect());
 
     if let Some((command, remaining)) = extracted {
         let gem_file = lookup_gemfile_in_directory(PathBuf::from("."));
@@ -25,10 +26,15 @@ fn main() {
     }
 }
 
-fn extract_command_and_args(logger: &Logger, current_exe: Option<PathBuf>, args: Vec<String>) -> Option<(String, Vec<String>)> {
+fn extract_command_and_args(
+    logger: &Logger,
+    current_exe: Option<PathBuf>,
+    args: Vec<String>,
+) -> Option<(String, Vec<String>)> {
     let invoked_name = current_exe
         .and_then(|p| p.file_name().map(|s| s.to_os_string()))
-        .and_then(|f| f.into_string().ok()).expect("Can't find binary name");
+        .and_then(|f| f.into_string().ok())
+        .expect("Can't find binary name");
     logger.debug(format!("invoked_name {}", invoked_name));
 
     let command: String;
@@ -44,8 +50,9 @@ fn extract_command_and_args(logger: &Logger, current_exe: Option<PathBuf>, args:
         }
         command = args[1].clone();
         start_index = 1;
-    } else { // remove trailing char
-        let mut command_alias = invoked_name.to_string();
+    } else {
+        // remove trailing char
+        let mut command_alias = invoked_name;
         command_alias.pop();
         command = command_alias;
         start_index = 0
@@ -54,9 +61,13 @@ fn extract_command_and_args(logger: &Logger, current_exe: Option<PathBuf>, args:
     Some((command, remaining))
 }
 
-fn do_bundle_exec(logger: &Logger, command: &String, remaining: &[String], path: PathBuf) {
+fn do_bundle_exec(logger: &Logger, command: &str, remaining: &[String], path: PathBuf) {
     use std::time::Instant;
-    logger.debug(format!("Will execute {} from Gemfile found at {}", command, path.to_str().unwrap()));
+    logger.debug(format!(
+        "Will execute {} from Gemfile found at {}",
+        command,
+        path.to_str().unwrap()
+    ));
     let fallback_args = &remaining[1..];
     let now = Instant::now();
     let bundle_status = Command::new("bundle")
@@ -72,13 +83,14 @@ fn do_bundle_exec(logger: &Logger, command: &String, remaining: &[String], path:
     let elapsed = now.elapsed();
     // not sure we should fallback to main command on fail (if it is a lengthy one, we will fail twice)
     // heuristic on duration, if lengthier than x seconds do not ever fall-back
-    let _ = bundle_status.map(|status|
+    let _ = bundle_status.map(|status| {
         if !status.success() && elapsed.as_secs() < RETRY_GRACE_PERIOD_SEC {
             run_bare_command(command, fallback_args);
-        });
+        }
+    });
 }
 
-fn run_bare_command(command: &String, remaining: &[String]) -> Option<ExitStatus> {
+fn run_bare_command(command: &str, remaining: &[String]) -> Option<ExitStatus> {
     Command::new(command).args(remaining).status().ok()
 }
 
@@ -87,32 +99,36 @@ fn help() {
     println!();
     println!("Will execute provided command using bundler if available, looking up parent directories recursively for Gemfile");
     println!();
-    println!("
+    println!(
+        "
 If you symlink using another name, it will automatically run the associated binary:
     * `fastlanew` it will automatically run `fastlane`
     * `podw` will run `pod`
 To prevent conflict, the convention is adding an extra-character to the command.
-Here 'w' is used to remind the wrapper thing, but this is not checked extensively");
-    println!("
+Here 'w' is used to remind the wrapper thing, but this is not checked extensively"
+    );
+    println!(
+        "
 Debug option:
-   * if you export BW_DEBUG env var, binary will output all logs");
+   * if you export BW_DEBUG env var, binary will output all logs"
+    );
     //if symlinked to another name, use the symlink name minus the w to execute the bundle command podw > pod, fastlanew > fastlane
 }
 
 fn lookup_gemfile_in_directory(path: PathBuf) -> Result<PathBuf, BWErrors> {
     let path = path.as_path();
     if let Ok(paths) = fs::read_dir(path) {
-        let gemfile_in_dir = paths.flatten()
+        let gemfile_in_dir = paths
+            .flatten()
             .filter(|p| p.file_name().eq(&"Gemfile"))
-            .count() > 0;
+            .count()
+            > 0;
         if gemfile_in_dir {
             Ok(path.to_path_buf())
+        } else if let Some(parent_path) = path.parent() {
+            lookup_gemfile_in_directory(parent_path.to_path_buf())
         } else {
-            if let Some(parent_path) = path.parent() {
-                lookup_gemfile_in_directory(parent_path.to_path_buf())
-            } else {
-                Err(FsRoot)
-            }
+            Err(FsRoot)
         }
     } else {
         Err(FsNotFound)
@@ -120,12 +136,14 @@ fn lookup_gemfile_in_directory(path: PathBuf) -> Result<PathBuf, BWErrors> {
 }
 
 struct Logger {
-    verbose: bool
+    verbose: bool,
 }
 
 impl Logger {
     fn new() -> Logger {
-        Logger { verbose: env::var("BW_DEBUG").map(|_| true).unwrap_or(false) }
+        Logger {
+            verbose: env::var("BW_DEBUG").map(|_| true).unwrap_or(false),
+        }
     }
 
     fn debug(&self, msg: String) {
@@ -149,7 +167,7 @@ impl Display for BWErrors {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             FsRoot => write!(f, "Reached FS Root"),
-            FsNotFound => write!(f, "Unable to read directory")
+            FsNotFound => write!(f, "Unable to read directory"),
         }
     }
 }
@@ -158,8 +176,11 @@ impl Error for BWErrors {}
 
 #[cfg(test)]
 mod test {
-    use crate::{lookup_gemfile_in_directory, BWErrors, extract_command_and_args, Logger, NOMINAL_BINARY_NAME};
-    use std::path::{PathBuf, Path};
+    use crate::{
+        extract_command_and_args, lookup_gemfile_in_directory, BWErrors, Logger,
+        NOMINAL_BINARY_NAME,
+    };
+    use std::path::{Path, PathBuf};
 
     #[test]
     fn test_root_fs_returns_err() {
@@ -184,23 +205,36 @@ mod test {
 
     #[test]
     fn test_find_by_walking_parent_directories() {
-        let res = lookup_gemfile_in_directory(PathBuf::from("./test/root/nested/directory/deep/inside"));
+        let res =
+            lookup_gemfile_in_directory(PathBuf::from("./test/root/nested/directory/deep/inside"));
         let found = res.unwrap();
         assert_eq!(found.as_path(), Path::new("./test/root"))
     }
 
     #[test]
     fn test_extract_command_same_name_no_args_display_help() {
-        let res = extract_command_and_args(&Logger::new(), Some(PathBuf::from(NOMINAL_BINARY_NAME)), vec![String::from(NOMINAL_BINARY_NAME)]);
+        let res = extract_command_and_args(
+            &Logger::new(),
+            Some(PathBuf::from(NOMINAL_BINARY_NAME)),
+            vec![String::from(NOMINAL_BINARY_NAME)],
+        );
         assert!(res.is_none());
     }
 
     #[test]
     fn test_extract_command_same_name_propagate_args() {
-        let (command, args) = extract_command_and_args(&Logger::new(), Some(PathBuf::from(NOMINAL_BINARY_NAME)),
-                                                       vec![String::from(NOMINAL_BINARY_NAME), String::from("my"),
-                                                            String::from("tailor"), String::from("is"),
-                                                            String::from("rich")]).unwrap();
+        let (command, args) = extract_command_and_args(
+            &Logger::new(),
+            Some(PathBuf::from(NOMINAL_BINARY_NAME)),
+            vec![
+                String::from(NOMINAL_BINARY_NAME),
+                String::from("my"),
+                String::from("tailor"),
+                String::from("is"),
+                String::from("rich"),
+            ],
+        )
+        .unwrap();
 
         assert_eq!(command, "my");
         assert_eq!(4, args.len());
@@ -208,11 +242,18 @@ mod test {
 
     #[test]
     fn test_extract_different_same_name_remove_last_char_and_keep_all_args() {
-        let (command, args) = extract_command_and_args(&Logger::new(),
-                                                       Some(PathBuf::from("runw")),
-                                                       vec![String::from("runw"), String::from("my"),
-                                                            String::from("tailor"), String::from("is"),
-                                                            String::from("rich")]).unwrap();
+        let (command, args) = extract_command_and_args(
+            &Logger::new(),
+            Some(PathBuf::from("runw")),
+            vec![
+                String::from("runw"),
+                String::from("my"),
+                String::from("tailor"),
+                String::from("is"),
+                String::from("rich"),
+            ],
+        )
+        .unwrap();
 
         assert_eq!(command, "run");
         assert_eq!(5, args.len());
