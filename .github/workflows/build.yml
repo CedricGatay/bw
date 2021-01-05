@@ -1,11 +1,18 @@
-on: [push, pull_request]
+on:
+  pull_request:
+    branches:
+      - master
+
 
 name: Continuous integration
 
 jobs:
   check:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, windows-latest, macos-11.0 ]
     name: Check
-    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -69,23 +76,3 @@ jobs:
         with:
           command: clippy
           args: -- -D warnings
-
-  release:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ ubuntu-latest, windows-latest, macos-11.0 ]
-    name: Release
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - uses: Swatinem/rust-cache@v1
-      - run: rustup component add rustfmt
-      - uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --release
