@@ -49,13 +49,15 @@ fn extract_command_and_args(
             logger.debug(format!("Arg: {}", arg));
         }
         command = args[1].clone();
-        start_index = 1;
+        // [bw $command $args]
+        start_index = 2;
     } else {
         // remove trailing char
         let mut command_alias = invoked_name;
         command_alias.pop();
         command = command_alias;
-        start_index = 0
+        // [$command+ $args]
+        start_index = 1
     }
     let remaining: Vec<String> = args[start_index..].to_vec();
     Some((command, remaining))
@@ -102,8 +104,8 @@ fn help() {
     println!(
         "
 If you symlink using another name, it will automatically run the associated binary:
-    * `fastlanew` it will automatically run `fastlane`
-    * `podw` will run `pod`
+    * `fastlanew` will run `fastlane`
+    * `podw repo update` will run `pod repo update`
 To prevent conflict, the convention is adding an extra-character to the command.
 Here 'w' is used to remind the wrapper thing, but this is not checked extensively"
     );
@@ -237,7 +239,7 @@ mod test {
         .unwrap();
 
         assert_eq!(command, "my");
-        assert_eq!(4, args.len());
+        assert_eq!(3, args.len());
     }
 
     #[test]
@@ -256,6 +258,7 @@ mod test {
         .unwrap();
 
         assert_eq!(command, "run");
-        assert_eq!(5, args.len());
+        assert_eq!(4, args.len());
+        assert_eq!("my", args[0]);
     }
 }
