@@ -63,6 +63,9 @@ jobs:
     needs: [test, fmt, clippy]
     name: Create GitHub Release
     runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create_release.outputs.id }}
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
     steps:
       - uses: actions/checkout@v2
       - name: Create tag
@@ -80,33 +83,15 @@ jobs:
           release_name: ${{ steps.create_tag.outputs.tag }}
           draft: true
           prerelease: false
-      - name: Create artifact files
-        run: |
-          mkdir info
-          echo "${{ steps.create_release.outputs.id }}" > info/release_id
-          echo "${{ steps.create_release.outputs.upload_url }}" > info/upload_url
-      - uses: actions/upload-artifact@v1
-        with:
-          name: info
-          path: info
 
   build-release:
     needs: [release]
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-#        os: [ ubuntu-latest, windows-latest, macos-latest ] need to fix windows build (cat / echo usage)
-        os: [ ubuntu-latest, macos-latest ]
+        os: [ ubuntu-latest, windows-latest, macos-latest ]
     name: Release
     steps:
-      - uses: actions/download-artifact@v1
-        with:
-          name: info
-      - name: Set upload_url
-        id: upload_info
-        run: |
-          upload_url=$(cat info/upload_url)
-          echo "::set-output name=upload_url::$upload_url"
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
@@ -120,35 +105,33 @@ jobs:
           command: build
           args: --release
       - name: Archive build result
-        run: tar czf bw-${{ matrix.os }}.tar.gz README.adoc -C target/release bw
+        run: |
+          tar -czf bw-${{ matrix.os }}.tar.gz README.adoc -C target/release bw
+        if: ${{ runner.os != 'Windows' }}
+      - name: Archive build result (Windows)
+        run: |
+          tar -czf bw-${{ matrix.os }}.tar.gz README.adoc -C target/release bw.exe
+        if: ${{ runner.os == 'Windows' }}
       - name: Upload Built bw
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ steps.upload_info.outputs.upload_url }}
+          upload_url: ${{ needs.release.outputs.upload_url }}
           asset_path: bw-${{ matrix.os }}.tar.gz
           asset_name: bw-${{ matrix.os }}.tar.gz
           asset_content_type: application/gzip
 
   metadata:
     name: Publish Release
-    needs: [build-release]
+    needs: [release, build-release]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v1
-        with:
-          name: info
-      - name: Set publish_info
-        id: publish_info
-        run: |
-          release_id=$(cat info/release_id)
-          echo "::set-output name=release_id::$release_id"
       - uses: eregon/publish-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          release_id: ${{ steps.publish_info.outputs.release_id }}
+          release_id: ${{ needs.release.outputs.release_id }}
       - uses: eregon/keep-last-n-releases@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
