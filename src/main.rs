@@ -16,7 +16,10 @@ fn main() {
         extract_command_and_args(&logger, env::current_exe().ok(), env::args().collect());
 
     if let Some((command, remaining)) = extracted {
-        let gem_file = lookup_gemfile_in_directory(PathBuf::from("."));
+        let gem_file = lookup_gemfile_in_directory(
+            &logger,
+            env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+        );
         if let Ok(path) = gem_file {
             do_bundle_exec(&logger, &command, &remaining, path);
         } else {
@@ -70,9 +73,14 @@ fn do_bundle_exec(logger: &Logger, command: &str, remaining: &[String], path: Pa
         command,
         path.to_str().unwrap()
     ));
-    let fallback_args = &remaining[1..];
+    let fallback_args = if remaining.len() > 1 {
+        &remaining[1..]
+    } else {
+        &[]
+    };
     let now = Instant::now();
     let bundle_status = Command::new("bundle")
+        .current_dir(path)
         .arg("exec")
         .arg(command)
         .args(remaining)
@@ -117,7 +125,7 @@ Debug option:
     //if symlinked to another name, use the symlink name minus the w to execute the bundle command podw > pod, fastlanew > fastlane
 }
 
-fn lookup_gemfile_in_directory(path: PathBuf) -> Result<PathBuf, BWErrors> {
+fn lookup_gemfile_in_directory(logger: &Logger, path: PathBuf) -> Result<PathBuf, BWErrors> {
     let path = path.as_path();
     if let Ok(paths) = fs::read_dir(path) {
         let gemfile_in_dir = paths
@@ -125,10 +133,19 @@ fn lookup_gemfile_in_directory(path: PathBuf) -> Result<PathBuf, BWErrors> {
             .filter(|p| p.file_name().eq(&"Gemfile"))
             .count()
             > 0;
+        logger.debug(format!(
+            "Reading {}, found Gemfile: {}",
+            path.to_str().unwrap_or(""),
+            gemfile_in_dir
+        ));
         if gemfile_in_dir {
             Ok(path.to_path_buf())
         } else if let Some(parent_path) = path.parent() {
-            lookup_gemfile_in_directory(parent_path.to_path_buf())
+            logger.debug(format!(
+                "Looking up in parent {}",
+                parent_path.to_str().unwrap_or("")
+            ));
+            lookup_gemfile_in_directory(logger, parent_path.to_path_buf())
         } else {
             Err(FsRoot)
         }
@@ -186,29 +203,31 @@ mod test {
 
     #[test]
     fn test_root_fs_returns_err() {
-        let res = lookup_gemfile_in_directory(PathBuf::from("/"));
+        let res = lookup_gemfile_in_directory(&Logger::new(), PathBuf::from("/"));
         let err = res.unwrap_err();
         assert_eq!(err, BWErrors::FsRoot)
     }
 
     #[test]
     fn test_unreadable_dir_returns_err() {
-        let res = lookup_gemfile_in_directory(PathBuf::from("/non/existent/dir"));
+        let res = lookup_gemfile_in_directory(&Logger::new(), PathBuf::from("/non/existent/dir"));
         let err = res.unwrap_err();
         assert_eq!(err, BWErrors::FsNotFound)
     }
 
     #[test]
     fn test_find_in_current_directory() {
-        let res = lookup_gemfile_in_directory(PathBuf::from("./test/root"));
+        let res = lookup_gemfile_in_directory(&Logger::new(), PathBuf::from("./test/root"));
         let found = res.unwrap();
         assert_eq!(found.as_path(), Path::new("./test/root"))
     }
 
     #[test]
     fn test_find_by_walking_parent_directories() {
-        let res =
-            lookup_gemfile_in_directory(PathBuf::from("./test/root/nested/directory/deep/inside"));
+        let res = lookup_gemfile_in_directory(
+            &Logger::new(),
+            PathBuf::from("./test/root/nested/directory/deep/inside"),
+        );
         let found = res.unwrap();
         assert_eq!(found.as_path(), Path::new("./test/root"))
     }

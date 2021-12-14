@@ -1,6 +1,6 @@
 [package]
 name = "bw"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Cedric Gatay <c.gatay@code-troopers.com>"]
 edition = "2018"
 
