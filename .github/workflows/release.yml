@@ -63,6 +63,9 @@ jobs:
     needs: [test, fmt, clippy]
     name: Create GitHub Release
     runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_artifact_files.outputs.upload_url }}
+      release_id: ${{ steps.create_artifact_files.outputs.release_id }}
     steps:
       - uses: actions/checkout@v2
       - name: Create tag
@@ -81,6 +84,7 @@ jobs:
           draft: true
           prerelease: false
       - name: Create artifact files
+        id: create_artifact_files
         run: |
           echo "::set-output name=release_id::${{ steps.create_release.outputs.id }}"
           echo "::set-output name=upload_url::${{ steps.create_release.outputs.upload_url }}"
@@ -91,7 +95,7 @@ jobs:
     strategy:
       matrix:
 #        os: [ ubuntu-latest, windows-latest, macos-latest ] need to fix windows build (cat / echo usage)
-        os: [ ubuntu-latest, macos-latest ]
+        os: [ ubuntu-latest, macos-11 ]
     name: Release
     steps:
       - uses: actions/checkout@v2
@@ -106,6 +110,16 @@ jobs:
         with:
           command: build
           args: --release
+      - if: matrix.os == 'macos-11'
+        run: |
+          rustup target add aarch64-apple-darwin
+          SDKROOT=$(xcrun -sdk macosx --show-sdk-path) \
+            MACOSX_DEPLOYMENT_TARGET=$(xcrun -sdk macosx --show-sdk-platform-version) \
+            cargo build --release "--target=aarch64-apple-darwin"
+          lipo -create \
+            -output target/release/bw \
+            target/aarch64-apple-darwin/release/bw \
+            target/release/bw
       - name: Archive build result
         run: tar -czf bw-${{ matrix.os }}.tar.gz README.adoc -C target/release bw
       - name: Upload Built bw
